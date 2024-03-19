@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+
+import cv2
+import numpy as np
+import base64
+import os
+import argparse
+
+def decode_base64_images(base64_strings, separator, skip_first):
+    image_files = []
+    for i, base64_data in enumerate(base64_strings):
+        try:
+            if i == 0 and skip_first:
+                continue
+
+            _, base64_str = base64_data.split('base64,', 1)
+
+            padding = 4 - (len(base64_str) % 4)
+            if padding:
+                base64_str += "=" * padding
+
+            img_data = base64.b64decode(base64_str)
+            img_array = np.frombuffer(img_data, dtype=np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+            if img is None:
+                raise ValueError("The decoded image is empty. Check the base64 data.")
+
+            img_filename = f'image_{i}.png'
+            cv2.imwrite(img_filename, img)
+            image_files.append(img_filename)
+            
+            print(f"Image {i} decoded and saved.")
+
+        except ValueError as e:
+            print(f"Error decoding image {i}: {e}")
+        except Exception as e:
+            print(f"Unexpected error processing image {i}: {e}")
+
+    return image_files
+
+def create_video_from_images(image_files, output_file, fps):
+    if not image_files:
+        print("No valid images to create a video.")
+        return
+
+    print("Starting video creation...")
+    
+    frame = cv2.imread(image_files[0])
+    height, width, layers = frame.shape
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
+
+    for img_file in image_files:
+        img = cv2.imread(img_file)
+        video.write(img)
+
+    cv2.destroyAllWindows()
+    video.release()
+
+    print("Video successfully created.")
+
+    for img_file in image_files:
+        os.remove(img_file)
+        print(f"Deleted: {img_file}")
+
+def main(input_file, fps, separator, skip_first):
+    if not os.path.isfile(input_file):
+        print(f"The file {input_file} does not exist.")
+        return
+
+    print("Reading input file...")
+    
+    with open(input_file, 'r') as file:
+        content = file.read().strip()
+
+    base64_images = content.split(separator)
+
+    print(f"{len(base64_images) - (1 if skip_first else 0)} images detected. Starting decoding...")
+
+    image_files = decode_base64_images(base64_images, separator, skip_first)
+
+    create_video_from_images(image_files, 'output.mp4', fps)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Creates a video from base64-encoded images.")
+    parser.add_argument("input_file", help="Path to the file containing the base64-encoded images.")
+    parser.add_argument("fps", type=int, help="Number of frames per second for the video.")
+    parser.add_argument("separator", help="Character used to separate the base64-encoded images in the input file.")
+    parser.add_argument("skip_first", type=lambda x: (str(x).lower() == 'true'), help="True/False whether to skip the first frame.")
+
+    args = parser.parse_args()
+
+    main(args.input_file, args.fps, args.separator, args.skip_first)
